@@ -191,14 +191,23 @@ if data is not None:
     with col4:
         # Display ML Results if the button was clicked
         if run_ml:
-            with st.spinner("Training model..."):
+            with st.spinner("Training & Backtesting..."):
                 prediction, confidence = train_and_predict(data)
+                historical_accuracy = backtest_model(data, test_days=100)
+                
                 pred_label = "▲ UP" if prediction == 1 else "▼ DOWN"
                 pred_color = "normal" if prediction == 1 else "inverse"
-                st.metric(label="ML Prediction (Next Day)", value=pred_label, delta=f"Conf: {confidence*100:.1f}%", delta_color=pred_color)
+                
+                # We show the Prediction, Confidence, AND the new Backtested Accuracy
+                st.metric(label="ML Prediction (Next Day)", 
+                          value=pred_label, 
+                          delta=f"Conf: {confidence*100:.1f}%", 
+                          delta_color=pred_color)
+                
+                if historical_accuracy:
+                    st.caption(f"🧪 **Model Accuracy:** {historical_accuracy*100:.1f}% (Over last 100 days)")
         else:
             st.metric(label="ML Prediction (Next Day)", value="Waiting...", delta="Click 'Predict' in sidebar", delta_color="off")
-        
     st.markdown("---")
 
     # --- Charts ---
