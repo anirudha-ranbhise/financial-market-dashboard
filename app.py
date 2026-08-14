@@ -91,3 +91,32 @@ if data is not None:
     
 else:
     st.error("Whoops! No data found. Try checking the ticker symbol.")
+# ---------------------------------------------------------
+# Upgraded Sidebar with Popular Presets + Custom Option
+# ---------------------------------------------------------
+st.sidebar.header("⚙️ Control Panel")
+
+# 1. Preset dictionary: Friendly Name -> Yahoo Ticker
+stock_presets = {
+    "Silver Futures": "SI=F",
+    "Gold Futures": "GC=F",
+    "Nifty 50 (India)": "^NSEI",
+    "Reliance Industries": "RELIANCE.NS",
+    "Tata Motors": "TATAMOTORS.NS",
+    "Infosys": "INFY.NS",
+    "Apple": "AAPL",
+    "Microsoft": "MSFT",
+    "Bitcoin (USD)": "BTC-USD",
+    "Enter Custom Ticker...": "CUSTOM"
+}
+
+# 2. Dropdown for quick selection
+selected_option = st.sidebar.selectbox("Select Asset / Market", list(stock_presets.keys()))
+
+# 3. Logic to determine the active ticker
+if selected_option == "Enter Custom Ticker...":
+    ticker = st.sidebar.text_input("Enter Ticker Symbol (e.g., TSLA, TCS.NS)", "NVDA")
+else:
+    ticker = stock_presets[selected_option]
+
+time_period = st.sidebar.selectbox("Time Period", ["1mo", "3mo", "6mo", "1y", "2y", "5y"], index=3)
