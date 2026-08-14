@@ -78,12 +78,36 @@ st.markdown("---")
 
 # --- Sidebar ---
 st.sidebar.header("⚙️ Control Panel")
-stock_presets = {
-    "Silver Futures": "SI=F", "Gold Futures": "GC=F", "Nifty 50 (India)": "^NSEI",
-    "Reliance Industries": "RELIANCE.NS", "Tata Motors": "TATAMOTORS.NS", 
-    "Infosys": "INFY.NS", "Apple": "AAPL", "Microsoft": "MSFT",
-    "Bitcoin (USD)": "BTC-USD", "Enter Custom Ticker...": "CUSTOM"
-}
+# --- Dynamic Data Pipeline ---
+@st.cache_data
+def load_nse_tickers():
+    try:
+        # Read the official CSV file
+        df = pd.read_csv('EQUITY_L.csv')
+        
+        # Yahoo Finance requires '.NS' at the end of Indian stock symbols
+        symbols = df['SYMBOL'].astype(str) + ".NS"
+        names = df['NAME OF COMPANY']
+        
+        # Zip them together into a dictionary { "Company Name": "SYMBOL.NS" }
+        ticker_dict = dict(zip(names, symbols))
+        
+        # Add a few global fallback options at the top
+        ticker_dict["Bitcoin (USD)"] = "BTC-USD"
+        ticker_dict["Gold Futures"] = "GC=F"
+        ticker_dict["Enter Custom Ticker..."] = "CUSTOM"
+        
+        return ticker_dict
+    except FileNotFoundError:
+        # If the app can't find the CSV, it safely falls back to a basic list
+        return {
+            "Reliance Industries": "RELIANCE.NS", 
+            "TCS": "TCS.NS",
+            "Enter Custom Ticker...": "CUSTOM"
+        }
+
+# Load the dynamic dictionary
+stock_presets = load_nse_tickers()
 
 selected_option = st.sidebar.selectbox("Select Asset", list(stock_presets.keys()))
 ticker = st.sidebar.text_input("Enter Ticker", "NVDA") if selected_option == "Enter Custom Ticker..." else stock_presets[selected_option]
