@@ -6,7 +6,7 @@ import plotly.graph_objects as go
 import xgboost as xgb
 
 @st.cache_data 
-def get_live_data(symbol, time_period="2y"): # Expanded to 2y to give the ML model more training data
+def get_live_data(symbol, time_period="5y"): # UPGRADE: Increased to 5 years for way more training data!
     asset = yf.Ticker(symbol)
     data = asset.history(period=time_period)
     
@@ -15,7 +15,7 @@ def get_live_data(symbol, time_period="2y"): # Expanded to 2y to give the ML mod
         
     clean_data = data[['Close', 'Volume']].copy()
     
-    # 1. Technical Indicators (Features)
+    # --- Base Technical Indicators ---
     clean_data['EMA_12'] = clean_data['Close'].ewm(span=12, adjust=False).mean()
     clean_data['EMA_26'] = clean_data['Close'].ewm(span=26, adjust=False).mean()
     clean_data['MACD'] = clean_data['EMA_12'] - clean_data['EMA_26']
@@ -26,37 +26,54 @@ def get_live_data(symbol, time_period="2y"): # Expanded to 2y to give the ML mod
     loss = (-delta.where(delta < 0, 0)).ewm(alpha=1/14, adjust=False).mean()
     rs = gain / loss
     clean_data['RSI'] = 100 - (100 / (1 + rs))
-    
-    # 2. ML Feature Engineering: Daily Returns and Volatility
     clean_data['Daily_Return'] = clean_data['Close'].pct_change()
     
-    # 3. Target Definition: 1 if tomorrow's close is higher than today's, else 0
+    # --- ACCURACY UPGRADE: Advanced Feature Engineering ---
+    # 1. Simple Moving Averages (Trend identification)
+    clean_data['SMA_20'] = clean_data['Close'].rolling(window=20).mean()
+    clean_data['SMA_50'] = clean_data['Close'].rolling(window=50).mean()
+    
+    # 2. Volatility (Risk measurement)
+    clean_data['Volatility'] = clean_data['Close'].rolling(window=14).std()
+    
+    # 3. Lag Features (Giving the model a memory of the past 2 days)
+    clean_data['RSI_Lag1'] = clean_data['RSI'].shift(1)
+    clean_data['MACD_Lag1'] = clean_data['MACD'].shift(1)
+    clean_data['Return_Lag1'] = clean_data['Daily_Return'].shift(1)
+    
+    # --- Target Definition ---
     clean_data['Target'] = np.where(clean_data['Close'].shift(-1) > clean_data['Close'], 1, 0)
     
-    # Drop rows with NaN values created by our calculations
+    # Drop rows with NaN values created by our rolling windows and lags
     clean_data = clean_data.dropna()
     
     return clean_data
 
 def train_and_predict(data):
-    # Features we want the model to learn from
-    features = ['MACD', 'Signal_Line', 'RSI', 'Daily_Return', 'Volume']
+    # UPGRADE: The model now has a much wider view of the market mechanics
+    features = ['MACD', 'Signal_Line', 'RSI', 'Daily_Return', 'Volume', 
+                'SMA_20', 'SMA_50', 'Volatility', 'RSI_Lag1', 'MACD_Lag1', 'Return_Lag1']
     
     X = data[features]
     y = data['Target']
     
-    # Split data: Train on everything except the very last day
     X_train = X.iloc[:-1]
     y_train = y.iloc[:-1]
-    
-    # The data point we want to predict (today's data to predict tomorrow)
     X_latest = X.iloc[[-1]]
     
-    # Initialize and train the XGBoost Classifier
-    model = xgb.XGBClassifier(n_estimators=100, learning_rate=0.1, random_state=42)
+    # UPGRADE: Hyperparameter Tuning for Time-Series
+    # We restrict max_depth to prevent overfitting and use colsample to add randomness
+    model = xgb.XGBClassifier(
+        n_estimators=200,        # More trees
+        learning_rate=0.05,      # Learning slower
+        max_depth=4,             # Shallower trees to prevent overfitting noisy stock data
+        subsample=0.8,           # Train on 80% of data per tree
+        colsample_bytree=0.8,    # Use 80% of features per tree
+        random_state=42
+    )
+    
     model.fit(X_train, y_train)
     
-    # Make prediction and get confidence probability
     prediction = model.predict(X_latest)[0]
     probability = model.predict_proba(X_latest)[0]
     confidence = probability[1] if prediction == 1 else probability[0]
