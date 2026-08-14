@@ -98,6 +98,7 @@ st.markdown("Professional technical analysis suite featuring XGBoost trend predi
 st.markdown("---") 
 
 # --- Sidebar ---
+# --- Sidebar ---
 st.sidebar.header("⚙️ Control Panel")
 
 @st.cache_data
@@ -122,6 +123,18 @@ def load_nse_tickers():
 stock_presets = load_nse_tickers()
 selected_option = st.sidebar.selectbox("Select Asset", list(stock_presets.keys()))
 ticker = st.sidebar.text_input("Enter Ticker", "NVDA") if selected_option == "Enter Custom Ticker..." else stock_presets[selected_option]
+time_period = st.sidebar.selectbox("Time Period", ["1mo", "3mo", "6mo", "1y", "2y", "5y"], index=4)
+
+st.sidebar.markdown("---")
+st.sidebar.subheader("📊 Visual Settings")
+chart_type = st.sidebar.radio("Price Chart Type", ["Line", "Candlestick"])
+show_macd = st.sidebar.checkbox("Show MACD Chart", value=True)
+show_rsi = st.sidebar.checkbox("Show RSI Chart", value=True)
+
+st.sidebar.markdown("---")
+st.sidebar.subheader("📈 Custom Moving Averages")
+sma_fast = st.sidebar.slider("Fast SMA Period", min_value=5, max_value=50, value=20)
+sma_slow = st.sidebar.slider("Slow SMA Period", min_value=50, max_value=200, value=50)
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("🤖 XGBoost Predictor")
@@ -162,29 +175,47 @@ if data is not None:
         
     st.markdown("---")
     
+  # Calculate Custom SMAs dynamically based on the sliders!
+    data[f'SMA_{sma_fast}'] = data['Close'].rolling(window=sma_fast).mean()
+    data[f'SMA_{sma_slow}'] = data['Close'].rolling(window=sma_slow).mean()
+
+    # 1. Main Price Chart (Line or Candlestick)
     st.subheader(f"Price History: {ticker.upper()}")
     fig_price = go.Figure()
-    fig_price.add_trace(go.Scatter(x=data.index, y=data['Close'], mode='lines', name='Close Price', line=dict(color='#00ff88', width=2)))
-    fig_price.update_layout(template='plotly_dark', margin=dict(l=0, r=0, t=30, b=0), height=350)
+    
+    if chart_type == "Candlestick":
+        fig_price.add_trace(go.Candlestick(x=data.index, open=data['Open'], high=data['High'], low=data['Low'], close=data['Close'], name='Price'))
+    else:
+        fig_price.add_trace(go.Scatter(x=data.index, y=data['Close'], mode='lines', name='Close Price', line=dict(color='#00ff88', width=2)))
+        
+    # Add our custom moving averages to the price chart
+    fig_price.add_trace(go.Scatter(x=data.index, y=data[f'SMA_{sma_fast}'], mode='lines', name=f'{sma_fast}-Day SMA', line=dict(color='#ff00ff', width=1, dash='dot')))
+    fig_price.add_trace(go.Scatter(x=data.index, y=data[f'SMA_{sma_slow}'], mode='lines', name=f'{sma_slow}-Day SMA', line=dict(color='#00d4ff', width=1, dash='dot')))
+    
+    fig_price.update_layout(template='plotly_dark', margin=dict(l=0, r=0, t=30, b=0), height=400, xaxis_rangeslider_visible=False)
     st.plotly_chart(fig_price, use_container_width=True)
 
+    # 2. Conditional Indicator Charts
     ind_col1, ind_col2 = st.columns(2)
+    
     with ind_col1:
-        st.subheader("MACD")
-        fig_macd = go.Figure()
-        fig_macd.add_trace(go.Scatter(x=data.index, y=data['MACD'], mode='lines', name='MACD', line=dict(color='#00d4ff', width=2)))
-        fig_macd.add_trace(go.Scatter(x=data.index, y=data['Signal_Line'], mode='lines', name='Signal Line', line=dict(color='#ffaa00', width=2)))
-        fig_macd.update_layout(template='plotly_dark', margin=dict(l=0, r=0, t=30, b=0), height=300)
-        st.plotly_chart(fig_macd, use_container_width=True)
-        
+        if show_macd:
+            st.subheader("MACD")
+            fig_macd = go.Figure()
+            fig_macd.add_trace(go.Scatter(x=data.index, y=data['MACD'], mode='lines', name='MACD', line=dict(color='#00d4ff', width=2)))
+            fig_macd.add_trace(go.Scatter(x=data.index, y=data['Signal_Line'], mode='lines', name='Signal Line', line=dict(color='#ffaa00', width=2)))
+            fig_macd.update_layout(template='plotly_dark', margin=dict(l=0, r=0, t=30, b=0), height=300)
+            st.plotly_chart(fig_macd, use_container_width=True)
+            
     with ind_col2:
-        st.subheader("RSI")
-        fig_rsi = go.Figure()
-        fig_rsi.add_trace(go.Scatter(x=data.index, y=data['RSI'], mode='lines', name='RSI', line=dict(color='#ff00ff', width=2)))
-        fig_rsi.add_hline(y=70, line_dash="dash", line_color="red", annotation_text="Overbought")
-        fig_rsi.add_hline(y=30, line_dash="dash", line_color="green", annotation_text="Oversold")
-        fig_rsi.update_yaxes(range=[0, 100])
-        fig_rsi.update_layout(template='plotly_dark', margin=dict(l=0, r=0, t=30, b=0), height=300)
-        st.plotly_chart(fig_rsi, use_container_width=True)
+        if show_rsi:
+            st.subheader("RSI")
+            fig_rsi = go.Figure()
+            fig_rsi.add_trace(go.Scatter(x=data.index, y=data['RSI'], mode='lines', name='RSI', line=dict(color='#ff00ff', width=2)))
+            fig_rsi.add_hline(y=70, line_dash="dash", line_color="red", annotation_text="Overbought")
+            fig_rsi.add_hline(y=30, line_dash="dash", line_color="green", annotation_text="Oversold")
+            fig_rsi.update_yaxes(range=[0, 100])
+            fig_rsi.update_layout(template='plotly_dark', margin=dict(l=0, r=0, t=30, b=0), height=300)
+            st.plotly_chart(fig_rsi, use_container_width=True)
 else:
     st.error("Whoops! No data found. Try checking the ticker symbol.")
