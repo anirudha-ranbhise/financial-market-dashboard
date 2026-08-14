@@ -4,6 +4,7 @@ import numpy as np
 import yfinance as yf
 import plotly.graph_objects as go
 import xgboost as xgb
+from sklearn.metrics import accuracy_score 
 
 @st.cache_data 
 def get_live_data(symbol, time_period="5y"): # UPGRADE: Increased to 5 years for way more training data!
@@ -79,6 +80,39 @@ def train_and_predict(data):
     confidence = probability[1] if prediction == 1 else probability[0]
     
     return prediction, confidence
+    def backtest_model(data, test_days=100):
+    # Ensure we have enough data to train AND test
+    if len(data) < test_days + 100:
+        return None
+        
+    features = ['MACD', 'Signal_Line', 'RSI', 'Daily_Return', 'Volume', 
+                'SMA_20', 'SMA_50', 'Volatility', 'RSI_Lag1', 'MACD_Lag1', 'Return_Lag1']
+    
+    X = data[features]
+    y = data['Target']
+    
+    # Split the data: Train on everything EXCEPT the last 100 days
+    X_train = X.iloc[:-test_days]
+    y_train = y.iloc[:-test_days]
+    
+    # Test on exactly the last 100 days
+    X_test = X.iloc[-test_days:]
+    y_test = y.iloc[-test_days:]
+    
+    # Initialize the same optimized XGBoost model
+    model = xgb.XGBClassifier(
+        n_estimators=200, learning_rate=0.05, max_depth=4, 
+        subsample=0.8, colsample_bytree=0.8, random_state=42
+    )
+    
+    # Train the model and make predictions on the test set
+    model.fit(X_train, y_train)
+    predictions = model.predict(X_test)
+    
+    # Calculate how many it got right
+    accuracy = accuracy_score(y_test, predictions)
+    
+    return accuracy
 
 # --- Page UI Setup ---
 st.set_page_config(page_title="Market Dashboard", page_icon="📈", layout="wide")
