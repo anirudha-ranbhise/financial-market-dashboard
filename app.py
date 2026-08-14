@@ -81,7 +81,7 @@ def train_and_predict(data):
     
     return prediction, confidence
     def backtest_model(data, test_days=100):
-    # Ensure we have enough data to train AND test
+    # Notice how EVERYTHING below is pushed to the right by 4 spaces!
     if len(data) < test_days + 100:
         return None
         
@@ -91,29 +91,23 @@ def train_and_predict(data):
     X = data[features]
     y = data['Target']
     
-    # Split the data: Train on everything EXCEPT the last 100 days
     X_train = X.iloc[:-test_days]
     y_train = y.iloc[:-test_days]
     
-    # Test on exactly the last 100 days
     X_test = X.iloc[-test_days:]
     y_test = y.iloc[-test_days:]
     
-    # Initialize the same optimized XGBoost model
     model = xgb.XGBClassifier(
         n_estimators=200, learning_rate=0.05, max_depth=4, 
         subsample=0.8, colsample_bytree=0.8, random_state=42
     )
     
-    # Train the model and make predictions on the test set
     model.fit(X_train, y_train)
     predictions = model.predict(X_test)
     
-    # Calculate how many it got right
     accuracy = accuracy_score(y_test, predictions)
     
     return accuracy
-
 # --- Page UI Setup ---
 st.set_page_config(page_title="Market Dashboard", page_icon="📈", layout="wide")
 st.markdown("""
