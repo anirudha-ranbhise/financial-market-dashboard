@@ -13,8 +13,8 @@ def get_live_data(symbol, time_period="5y"):
     
     if data.empty:
         return None
-        
-    clean_data = data[['Close', 'Volume']].copy()
+        # Keep Open, High, and Low for the Candlestick chart!
+    clean_data = data[['Open', 'High', 'Low', 'Close', 'Volume']].copy()
     
     # Technical Indicators
     clean_data['EMA_12'] = clean_data['Close'].ewm(span=12, adjust=False).mean()
