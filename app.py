@@ -7,14 +7,15 @@ import xgboost as xgb
 from sklearn.metrics import accuracy_score
 
 @st.cache_data 
-def get_live_data(symbol, time_period="5y"):
+def get_live_data(symbol):
+    # BACKEND: Always fetch 5 years of daily data so math and ML stay accurate
     asset = yf.Ticker(symbol)
-    data = asset.history(period=time_period)
+    data = asset.history(period="5y", interval="1d")
     
     if data.empty:
         return None
-        # Keep Open, High, and Low for the Candlestick chart!
-    clean_data = data[['Open', 'High', 'Low', 'Close', 'Volume']].copy()
+        
+    clean_data = data[['Close', 'Volume']].copy()
     
     # Technical Indicators
     clean_data['EMA_12'] = clean_data['Close'].ewm(span=12, adjust=False).mean()
@@ -98,7 +99,6 @@ st.markdown("Professional technical analysis suite featuring XGBoost trend predi
 st.markdown("---") 
 
 # --- Sidebar ---
-# --- Sidebar ---
 st.sidebar.header("⚙️ Control Panel")
 
 @st.cache_data
@@ -123,22 +123,42 @@ def load_nse_tickers():
 stock_presets = load_nse_tickers()
 selected_option = st.sidebar.selectbox("Select Asset", list(stock_presets.keys()))
 ticker = st.sidebar.text_input("Enter Ticker", "NVDA") if selected_option == "Enter Custom Ticker..." else stock_presets[selected_option]
-time_period = st.sidebar.selectbox("Time Period", ["1mo", "3mo", "6mo", "1y", "2y", "5y"], index=4)
 
 st.sidebar.markdown("---")
-st.sidebar.subheader("📊 Visual Settings")
-chart_type = st.sidebar.radio("Price Chart Type", ["Line", "Candlestick"])
+st.sidebar.subheader("🤖 XGBoost Predictor")
+run_ml = st.sidebar.button("Predict Tomorrow's Trend", type="primary")
+
+# --- Smart Timeframe Logic ---
+st.sidebar.markdown("---")
+st.sidebar.subheader("⏳ Chart Settings")
+
+# FRONTEND: The user selects a friendly time period
+time_period = st.sidebar.selectbox(
+    "Time Period", 
+    ["1 Week", "1 Month", "3 Months", "6 Months", "1 Year", "2 Years", "3 Years", "5 Years"], 
+    index=4 # Defaults to 1 Year
+)
+
+# Map the selection to approximate trading days to display
+period_map = {
+    "1 Week": 5,
+    "1 Month": 21,
+    "3 Months": 63,
+    "6 Months": 126,
+    "1 Year": 252,
+    "2 Years": 504,
+    "3 Years": 756,
+    "5 Years": 1260
+}
+display_days = period_map[time_period]
+
 show_macd = st.sidebar.checkbox("Show MACD Chart", value=True)
 show_rsi = st.sidebar.checkbox("Show RSI Chart", value=True)
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("📈 Custom Moving Averages")
-sma_fast = st.sidebar.slider("Fast SMA Period", min_value=5, max_value=50, value=20)
-sma_slow = st.sidebar.slider("Slow SMA Period", min_value=50, max_value=200, value=50)
-
-st.sidebar.markdown("---")
-st.sidebar.subheader("🤖 XGBoost Predictor")
-run_ml = st.sidebar.button("Predict Tomorrow's Trend", type="primary")
+sma_fast = st.sidebar.slider("Fast SMA", min_value=5, max_value=50, value=20)
+sma_slow = st.sidebar.slider("Slow SMA", min_value=50, max_value=200, value=50)
 
 # --- Fetch Data & Build UI ---
 data = get_live_data(ticker)
@@ -166,33 +186,35 @@ if data is not None:
                 
                 pred_label = "▲ UP" if prediction == 1 else "▼ DOWN"
                 pred_color = "normal" if prediction == 1 else "inverse"
-                st.metric(label="ML Prediction (Next Day)", value=pred_label, delta=f"Conf: {confidence*100:.1f}%", delta_color=pred_color)
+                st.metric(label="ML Prediction", value=pred_label, delta=f"Conf: {confidence*100:.1f}%", delta_color=pred_color)
                 
                 if historical_accuracy:
-                    st.caption(f"🧪 **Model Accuracy:** {historical_accuracy*100:.1f}% (Last 100 days)")
+                    st.caption(f"🧪 **Model Accuracy:** {historical_accuracy*100:.1f}% (Last 100 periods)")
         else:
-            st.metric(label="ML Prediction (Next Day)", value="Waiting...", delta="Click 'Predict' in sidebar", delta_color="off")
+            st.metric(label="ML Prediction", value="Waiting...", delta="Click 'Predict' in sidebar", delta_color="off")
         
     st.markdown("---")
     
-  # Calculate Custom SMAs dynamically based on the sliders!
+    # Calculate Custom SMAs on the full 5-year dataset so math is right
     data[f'SMA_{sma_fast}'] = data['Close'].rolling(window=sma_fast).mean()
     data[f'SMA_{sma_slow}'] = data['Close'].rolling(window=sma_slow).mean()
 
-    # 1. Main Price Chart (Line or Candlestick)
+    # Slice the data to only show the time period the user requested
+    display_data = data.tail(display_days).copy()
+
+    # Convert dates to strings so Plotly ignores missing weekends
+    display_data.index = display_data.index.strftime('%Y-%m-%d')
+
+    # 1. Main Price Chart (Line Chart Only)
     st.subheader(f"Price History: {ticker.upper()}")
     fig_price = go.Figure()
     
-    if chart_type == "Candlestick":
-        fig_price.add_trace(go.Candlestick(x=data.index, open=data['Open'], high=data['High'], low=data['Low'], close=data['Close'], name='Price'))
-    else:
-        fig_price.add_trace(go.Scatter(x=data.index, y=data['Close'], mode='lines', name='Close Price', line=dict(color='#00ff88', width=2)))
-        
-    # Add our custom moving averages to the price chart
-    fig_price.add_trace(go.Scatter(x=data.index, y=data[f'SMA_{sma_fast}'], mode='lines', name=f'{sma_fast}-Day SMA', line=dict(color='#ff00ff', width=1, dash='dot')))
-    fig_price.add_trace(go.Scatter(x=data.index, y=data[f'SMA_{sma_slow}'], mode='lines', name=f'{sma_slow}-Day SMA', line=dict(color='#00d4ff', width=1, dash='dot')))
+    fig_price.add_trace(go.Scatter(x=display_data.index, y=display_data['Close'], mode='lines', name='Close Price', line=dict(color='#00ff88', width=2)))
+    fig_price.add_trace(go.Scatter(x=display_data.index, y=display_data[f'SMA_{sma_fast}'], mode='lines', name=f'{sma_fast}-Period SMA', line=dict(color='#ff00ff', width=1, dash='dot')))
+    fig_price.add_trace(go.Scatter(x=display_data.index, y=display_data[f'SMA_{sma_slow}'], mode='lines', name=f'{sma_slow}-Period SMA', line=dict(color='#00d4ff', width=1, dash='dot')))
     
     fig_price.update_layout(template='plotly_dark', margin=dict(l=0, r=0, t=30, b=0), height=400, xaxis_rangeslider_visible=False)
+    fig_price.update_xaxes(nticks=10) 
     st.plotly_chart(fig_price, use_container_width=True)
 
     # 2. Conditional Indicator Charts
@@ -202,20 +224,22 @@ if data is not None:
         if show_macd:
             st.subheader("MACD")
             fig_macd = go.Figure()
-            fig_macd.add_trace(go.Scatter(x=data.index, y=data['MACD'], mode='lines', name='MACD', line=dict(color='#00d4ff', width=2)))
-            fig_macd.add_trace(go.Scatter(x=data.index, y=data['Signal_Line'], mode='lines', name='Signal Line', line=dict(color='#ffaa00', width=2)))
+            fig_macd.add_trace(go.Scatter(x=display_data.index, y=display_data['MACD'], mode='lines', name='MACD', line=dict(color='#00d4ff', width=2)))
+            fig_macd.add_trace(go.Scatter(x=display_data.index, y=display_data['Signal_Line'], mode='lines', name='Signal Line', line=dict(color='#ffaa00', width=2)))
             fig_macd.update_layout(template='plotly_dark', margin=dict(l=0, r=0, t=30, b=0), height=300)
+            fig_macd.update_xaxes(nticks=10) 
             st.plotly_chart(fig_macd, use_container_width=True)
             
     with ind_col2:
         if show_rsi:
             st.subheader("RSI")
             fig_rsi = go.Figure()
-            fig_rsi.add_trace(go.Scatter(x=data.index, y=data['RSI'], mode='lines', name='RSI', line=dict(color='#ff00ff', width=2)))
+            fig_rsi.add_trace(go.Scatter(x=display_data.index, y=display_data['RSI'], mode='lines', name='RSI', line=dict(color='#ff00ff', width=2)))
             fig_rsi.add_hline(y=70, line_dash="dash", line_color="red", annotation_text="Overbought")
             fig_rsi.add_hline(y=30, line_dash="dash", line_color="green", annotation_text="Oversold")
             fig_rsi.update_yaxes(range=[0, 100])
             fig_rsi.update_layout(template='plotly_dark', margin=dict(l=0, r=0, t=30, b=0), height=300)
+            fig_rsi.update_xaxes(nticks=10)
             st.plotly_chart(fig_rsi, use_container_width=True)
 else:
     st.error("Whoops! No data found. Try checking the ticker symbol.")
